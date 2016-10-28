@@ -28,6 +28,7 @@ def parse(input_filename, output_filename):
     creation_lines = []
     enum_types = []
     foreign_key_lines = []
+    key_lines = []
     fulltext_key_lines = []
     sequence_lines = []
     cast_lines = []
@@ -49,7 +50,7 @@ def parse(input_filename, output_filename):
         input_fh = open(input_filename)
 
 
-    output.write("-- Converted by db_converter\n")
+    output.write("-- Converted by db_converter.py - https://github.com/ramsrib/mysql-postgresql-converter\n")
     output.write("START TRANSACTION;\n")
     output.write("SET standard_conforming_strings=off;\n")
     output.write("SET escape_string_warning=off;\n")
@@ -128,7 +129,8 @@ def parse(input_filename, output_filename):
                     type = "text"
                 elif type.startswith("varchar("):
                     size = int(type.split("(")[1].rstrip(")"))
-                    type = "varchar(%s)" % (size * 2)
+                    # Maintain same size
+                    type = "varchar(%s)" % (size)
                 elif type.startswith("smallint("):
                     type = "int2"
                     set_sequence = True
@@ -167,17 +169,21 @@ def parse(input_filename, output_filename):
             elif line.startswith("PRIMARY KEY"):
                 creation_lines.append(line.rstrip(","))
             elif line.startswith("CONSTRAINT"):
-                foreign_key_lines.append("ALTER TABLE \"%s\" ADD CONSTRAINT %s DEFERRABLE INITIALLY DEFERRED" % (current_table, line.split("CONSTRAINT")[1].strip().rstrip(",")))
-                foreign_key_lines.append("CREATE INDEX ON \"%s\" %s" % (current_table, line.split("FOREIGN KEY")[1].split("REFERENCES")[0].strip().rstrip(",")))
+                foreign_key_lines.append("ALTER TABLE \"%s\" ADD CONSTRAINT %s" % (current_table, line.split("CONSTRAINT")[1].strip().rstrip(","))) # removed DEFERRABLE INITIALLY DEFERRED
+                # foreign_key_lines.append("ALTER TABLE \"%s\" ADD CONSTRAINT %s DEFERRABLE INITIALLY DEFERRED" % (current_table, line.split("CONSTRAINT")[1].strip().rstrip(",")))
+                # foreign_key_lines.append("CREATE INDEX ON \"%s\" %s" % (current_table, line.split("FOREIGN KEY")[1].split("REFERENCES")[0].strip().rstrip(",")))
             elif line.startswith("UNIQUE KEY"):
                 creation_lines.append("UNIQUE (%s)" % line.split("(")[1].split(")")[0])
+                # Skip Indices migration
+                # pass
             elif line.startswith("FULLTEXT KEY"):
 
                 fulltext_keys = " || ' ' || ".join( line.split('(')[-1].split(')')[0].replace('"', '').split(',') )
                 fulltext_key_lines.append("CREATE INDEX ON %s USING gin(to_tsvector('english', %s))" % (current_table, fulltext_keys))
 
             elif line.startswith("KEY"):
-                pass
+                # pass
+                key_lines.append("CREATE INDEX on \"%s\" (%s)" % (current_table, line.split("(")[1].split(")")[0]))
             # Is it the end of the table?
             elif line == ");":
                 output.write("CREATE TABLE \"%s\" (\n" % current_table)
@@ -205,15 +211,20 @@ def parse(input_filename, output_filename):
     for line in foreign_key_lines:
         output.write("%s;\n" % line)
 
-    # Write sequences out
-    output.write("\n-- Sequences --\n")
-    for line in sequence_lines:
+    # Write KEY indexes constraints out
+    output.write("\n-- Indexes --\n")
+    for line in key_lines:
         output.write("%s;\n" % line)
 
+    # Write sequences out
+    # output.write("\n-- Sequences --\n")
+    # for line in sequence_lines:
+    #     output.write("%s;\n" % line)
+
     # Write full-text indexkeyses out
-    output.write("\n-- Full Text keys --\n")
-    for line in fulltext_key_lines:
-        output.write("%s;\n" % line)
+    # output.write("\n-- Full Text keys --\n")
+    # for line in fulltext_key_lines:
+    #     output.write("%s;\n" % line)
 
     # Finish file
     output.write("\n")
