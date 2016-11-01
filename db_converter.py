@@ -52,8 +52,8 @@ def parse(input_filename, output_filename):
 
     output.write("-- Converted by db_converter.py - https://github.com/ramsrib/mysql-postgresql-converter\n")
     output.write("START TRANSACTION;\n")
-    output.write("SET standard_conforming_strings=off;\n")
-    output.write("SET escape_string_warning=off;\n")
+    # output.write("SET standard_conforming_strings=off;\n")
+    # output.write("SET escape_string_warning=off;\n")
     output.write("SET CONSTRAINTS ALL DEFERRED;\n\n")
 
     for i, line in enumerate(input_fh):
@@ -95,6 +95,7 @@ def parse(input_filename, output_filename):
             # Is it a column?
             if line.startswith('"'):
                 useless, name, definition = line.strip(",").split('"',2)
+                # name = name.lower() # postgres converts to lowercase anyway
                 try:
                     type, extra = definition.strip().split(" ", 1)
 
@@ -156,24 +157,24 @@ def parse(input_filename, output_filename):
                     type = enum_name
 
                 if final_type:
-                    cast_lines.append("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" DROP DEFAULT, ALTER COLUMN \"%s\" TYPE %s USING CAST(\"%s\" as %s)" % (current_table, name, name, final_type, name, final_type))
+                    cast_lines.append("ALTER TABLE \"%s\" ALTER COLUMN %s DROP DEFAULT, ALTER COLUMN %s TYPE %s USING CAST(%s as %s)" % (current_table, name, name, final_type, name, final_type))
                 # ID fields need sequences [if they are integers?]
                 if name == "id" and set_sequence is True:
                     sequence_lines.append("CREATE SEQUENCE %s_id_seq" % (current_table))
                     sequence_lines.append("SELECT setval('%s_id_seq', max(id)) FROM %s" % (current_table, current_table))
                     sequence_lines.append("ALTER TABLE \"%s\" ALTER COLUMN \"id\" SET DEFAULT nextval('%s_id_seq')" % (current_table, current_table))
                 # Record it
-                creation_lines.append('"%s" %s %s' % (name, type, extra))
+                creation_lines.append('%s %s %s' % (name, type, extra))
                 tables[current_table]['columns'].append((name, type, extra))
             # Is it a constraint or something?
             elif line.startswith("PRIMARY KEY"):
-                creation_lines.append(line.rstrip(","))
+                creation_lines.append("PRIMARY KEY %s" % line.split("PRIMARY KEY")[1].replace('"', '').rstrip(","))
             elif line.startswith("CONSTRAINT"):
-                foreign_key_lines.append("ALTER TABLE \"%s\" ADD CONSTRAINT %s" % (current_table, line.split("CONSTRAINT")[1].strip().rstrip(","))) # removed DEFERRABLE INITIALLY DEFERRED
+                foreign_key_lines.append("ALTER TABLE \"%s\" ADD CONSTRAINT %s" % (current_table, line.split("CONSTRAINT")[1].replace('"', '').strip().rstrip(","))) # removed DEFERRABLE INITIALLY DEFERRED
                 # foreign_key_lines.append("ALTER TABLE \"%s\" ADD CONSTRAINT %s DEFERRABLE INITIALLY DEFERRED" % (current_table, line.split("CONSTRAINT")[1].strip().rstrip(",")))
                 # foreign_key_lines.append("CREATE INDEX ON \"%s\" %s" % (current_table, line.split("FOREIGN KEY")[1].split("REFERENCES")[0].strip().rstrip(",")))
             elif line.startswith("UNIQUE KEY"):
-                creation_lines.append("UNIQUE (%s)" % line.split("(")[1].split(")")[0])
+                creation_lines.append("UNIQUE (%s)" % line.split("(")[1].split(")")[0].replace('"', ''))
                 # Skip Indices migration
                 # pass
             elif line.startswith("FULLTEXT KEY"):
@@ -183,7 +184,7 @@ def parse(input_filename, output_filename):
 
             elif line.startswith("KEY"):
                 # pass
-                key_lines.append("CREATE INDEX on \"%s\" (%s)" % (current_table, line.split("(")[1].split(")")[0]))
+                key_lines.append("CREATE INDEX on \"%s\" (%s)" % (current_table, line.split("(")[1].split(")")[0].replace('"', '')))
             # Is it the end of the table?
             elif line == ");":
                 output.write("CREATE TABLE \"%s\" (\n" % current_table)
